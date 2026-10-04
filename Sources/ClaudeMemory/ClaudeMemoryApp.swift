@@ -21,6 +21,7 @@ struct ClaudeMemoryApp: App {
                 }
         }
         .commands {
+            FileCommands()
             CommandGroup(after: .toolbar) {
                 Button("Reload") { model.reload() }
                     .keyboardShortcut("r")
@@ -40,10 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard model?.hasUnsavedChanges == true else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = "You have unsaved changes"
-        alert.informativeText = "Quitting now will discard them."
-        alert.addButton(withTitle: "Stay")
-        alert.addButton(withTitle: "Discard and quit")
+        let names = model?.unsavedFileNames ?? []
+        alert.messageText = names.count == 1 ? "\(names[0]) has unsaved changes" : "You have unsaved changes in \(names.count) files"
+        let listed = names.prefix(5).joined(separator: "\n") + (names.count > 5 ? "\nand \(names.count - 5) more" : "")
+        alert.informativeText = (names.count > 1 ? listed + "\n\n" : "") + "Quitting now discards your edits. Go back to save them with ⌘S."
+        alert.addButton(withTitle: "Keep editing")
+        alert.addButton(withTitle: "Discard changes and quit")
+        alert.buttons[1].hasDestructiveAction = true
         return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
     }
 }

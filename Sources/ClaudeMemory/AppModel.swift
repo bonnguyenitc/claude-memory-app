@@ -53,7 +53,14 @@ final class AppModel {
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var pendingReload: Task<Void, Never>?
 
+    /// False when `~/.claude/projects` is missing, so an empty list isn't mistaken for "no memories".
+    private(set) var projectsFolderMissing = false
+
     var hasUnsavedChanges: Bool { buffers.values.contains(where: \.isDirty) }
+
+    var unsavedFileNames: [String] {
+        buffers.filter { $0.value.isDirty }.map { $0.key.lastPathComponent }.sorted()
+    }
 
     func start() {
         reload()
@@ -80,6 +87,7 @@ final class AppModel {
 
     func reload() {
         projects = repository.loadProjects(resolver: resolver)
+        projectsFolderMissing = !FileManager.default.fileExists(atPath: repository.projectsDirectory.path)
         for url in buffers.keys {
             refreshBuffer(at: url)
         }

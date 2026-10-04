@@ -298,6 +298,10 @@ private struct EditorChrome: ViewModifier {
             content
         }
         .task { model.open(url) }
+        .focusedSceneValue(\.editorActions, EditorActions(
+            save: !canSave || (buffer?.isDirty != true && exists) ? nil : { save(force: false) },
+            showInFinder: exists ? { NSWorkspace.shared.activateFileViewerSelecting([url]) } : nil,
+            trash: onDelete))
         .navigationSubtitle((url.path as NSString).abbreviatingWithTildeInPath)
         .toolbar {
             ToolbarItem {
@@ -316,7 +320,7 @@ private struct EditorChrome: ViewModifier {
             }
             ToolbarItem {
                 Button("Save", systemImage: "square.and.arrow.down") { save(force: false) }
-                    .keyboardShortcut("s")
+                    .help("Save (⌘S)")
                     .disabled(!canSave || (buffer?.isDirty != true && exists))
             }
         }

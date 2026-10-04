@@ -62,11 +62,7 @@ struct MemoryListView: View {
         }
         .overlay {
             if groups.isEmpty {
-                if search.isEmpty && typeFilter == nil {
-                    ContentUnavailableView("No memories yet", systemImage: "brain")
-                } else {
-                    ContentUnavailableView.search(text: search)
-                }
+                emptyState
             }
         }
         .searchable(text: $search, prompt: "Search memories")
@@ -86,6 +82,44 @@ struct MemoryListView: View {
                 if case .project = scope, let project = scopedProjects.first {
                     Button("New memory", systemImage: "plus") { onCreate(project) }
                         .keyboardShortcut("n")
+                }
+            }
+        }
+    }
+
+    /// Three different empties: the folder is missing, nothing matches, or there is nothing yet.
+    @ViewBuilder
+    private var emptyState: some View {
+        if model.projectsFolderMissing {
+            ContentUnavailableView {
+                Label("Can’t find Claude’s memory folder", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("Expected \((model.repository.projectsDirectory.path as NSString).abbreviatingWithTildeInPath). Claude Code creates it on first use, or CLAUDE_HOME points somewhere else.")
+            } actions: {
+                Button("Reload") { model.reload() }
+            }
+        } else if !search.isEmpty {
+            ContentUnavailableView.search(text: search)
+        } else if let typeFilter {
+            ContentUnavailableView {
+                Label("No \(typeFilter.rawValue) memories", systemImage: typeFilter.symbol)
+            } description: {
+                Text("Nothing here has that type.")
+            } actions: {
+                Button("Show all types") { self.typeFilter = nil }
+            }
+        } else {
+            ContentUnavailableView {
+                Label("No memories yet", systemImage: "brain")
+            } description: {
+                if case .project = scope {
+                    Text("Memories are notes Claude reads at the start of each session.")
+                } else {
+                    Text("Claude Code saves memories as you work. Pick a project to write one yourself.")
+                }
+            } actions: {
+                if case .project = scope, let project = scopedProjects.first {
+                    Button("New memory") { onCreate(project) }
                 }
             }
         }
