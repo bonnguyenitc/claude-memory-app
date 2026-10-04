@@ -1,0 +1,70 @@
+:root {
+  color-scheme: light dark;
+  --text: #1f2328;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --surface: #f6f8fa;
+  --link: #0969da;
+  --missing: #cf222e;
+  --background: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e6edf3;
+    --muted: #9198a1;
+    --border: #3d444d;
+    --surface: #151b23;
+    --link: #4493f8;
+    --missing: #f85149;
+    --background: #1e1e1e;
+  }
+}
+
+html { background: var(--background); }
+
+body {
+  margin: 0;
+  padding: 16px 24px 40vh;
+  color: var(--text);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  word-wrap: break-word;
+}
+
+#content > :first-child { margin-top: 0; }
+
+h1, h2, h3, h4, h5, h6 { margin: 1.4em 0 0.6em; line-height: 1.25; font-weight: 600; }
+h1 { font-size: 1.9em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h2 { font-size: 1.45em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.2em; }
+h4, h5, h6 { font-size: 1em; }
+
+p, ul, ol, blockquote, pre, table, details { margin: 0 0 1em; }
+ul, ol { padding-left: 2em; }
+li + li { margin-top: 0.25em; }
+li.task-list-item { list-style: none; }
+li.task-list-item input { margin: 0 0.4em 0 -1.4em; vertical-align: middle; }
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a.wikilink { padding: 0 2px; border-radius: 3px; background: color-mix(in srgb, var(--link) 12%, transparent); }
+a.wikilink.missing { color: var(--missing); background: none; border-bottom: 1px dashed var(--missing); }
+
+code, pre { font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+code { padding: 0.15em 0.35em; border-radius: 4px; background: var(--surface); }
+pre { padding: 12px 16px; overflow: auto; border-radius: 6px; background: var(--surface); }
+pre code { padding: 0; background: none; }
+pre code.hljs, .hljs { background: none; padding: 0; }
+
+blockquote { margin-left: 0; padding: 0 1em; color: var(--muted); border-left: 3px solid var(--border); }
+hr { height: 2px; margin: 1.5em 0; border: 0; background: var(--border); }
+
+table { border-collapse: collapse; display: block; overflow: auto; }
+th, td { padding: 4px 12px; border: 1px solid var(--border); }
+th { background: var(--surface); font-weight: 600; }
+
+img { max-width: 100%; }
+
+details.frontmatter { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 12.5px; }
+details.frontmatter summary { cursor: pointer; font-weight: 600; }
+details.frontmatter pre { margin: 8px 0 0; padding: 0; background: none; }

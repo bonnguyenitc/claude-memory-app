@@ -1,0 +1,154 @@
+import Foundation
+
+public enum MemoryError: LocalizedError, Equatable {
+    case invalidSlug(String)
+    case alreadyExists(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidSlug(let slug):
+            "“\(slug)” is not kebab-case (only a–z, 0–9 and hyphens)."
+        case .alreadyExists(let fileName):
+            "\(fileName) already exists in this memory folder."
+        }
+    }
+}
+
+/// File-system access to Claude Code's memory and instruction files.
+public struct MemoryRepository {
+    public let claudeHome: URL
+    private let trashItem: (URL) throws -> Void
+
+    public init(
+        claudeHome: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude", directoryHint: .isDirectory),
+        trashItem: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) {
+        self.claudeHome = claudeHome
+        self.trashItem = trashItem
+    }
+
+    public var projectsDirectory: URL { claudeHome.appending(path: "projects", directoryHint: .isDirectory) }
+    public var globalInstructionsURL: URL { claudeHome.appending(path: "CLAUDE.md") }
+
+    /// Instruction files Claude Code reads from a project directory.
+    public static let projectInstructionPaths = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"]
+
+    // MARK: - Loading
+
+    public func loadProjects(resolver: ProjectPathResolver) -> [ClaudeProject] {
+        let fileManager = FileManager.default
+        let folders = (try? fileManager.contentsOfDirectory(
+            at: projectsDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles])) ?? []
+
+        return folders
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map { folder in
+                let resolution = resolver.resolve(projectFolder: folder)
+                let memoryDirectory = folder.appending(path: "memory", directoryHint: .isDirectory)
+                let instructionFiles = resolution.flatMap { $0.exists ? $0.path : nil }.map { path in
+                    Self.projectInstructionPaths
+                        .map { URL(filePath: path, directoryHint: .isDirectory).appending(path: $0) }
+                        .filter { fileManager.fileExists(atPath: $0.path) }
+                } ?? []
+                return ClaudeProject(
+                    id: folder.lastPathComponent,
+                    folderURL: folder,
+                    path: resolution?.path,
+                    pathExists: resolution?.exists ?? false,
+                    memories: loadMemories(in: memoryDirectory),
+                    indexText: try? String(contentsOf: memoryDirectory.appending(path: MemoryIndex.fileName), encoding: .utf8),
+                    instructionFiles: instructionFiles)
+            }
+            .sorted { $0.displayPath.localizedStandardCompare($1.displayPath) == .orderedAscending }
+    }
+
+    private func loadMemories(in directory: URL) -> [MemoryFile] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles])) ?? []
+        return files
+            .filter { $0.pathExtension == "md" && $0.lastPathComponent != MemoryIndex.fileName }
+            .compactMap { url in
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                return MemoryFile(url: url, text: text, modified: Self.modificationDate(of: url) ?? .distantPast)
+            }
+            .sorted { $0.modified > $1.modified }
+    }
+
+    public static func modificationDate(of url: URL) -> Date? {
+        try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+    }
+
+    // MARK: - Writing
+
+    public func write(_ text: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    @discardableResult
+    public func createMemory(
+        in project: ClaudeProject,
+        slug: String,
+        title: String,
+        description: String,
+        type: MemoryType,
+        body: String
+    ) throws -> URL {
+        guard slug.wholeMatch(of: /[a-z0-9]+(-[a-z0-9]+)*/) != nil else {
+            throw MemoryError.invalidSlug(slug)
+        }
+        let fileName = slug + ".md"
+        let url = project.memoryDirectory.appending(path: fileName)
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw MemoryError.alreadyExists(fileName)
+        }
+
+        var document = MarkdownDocument(parsing: "")
+        document.setValue(slug, at: ["name"])
+        document.setValue(description, at: ["description"])
+        document.setValue(type.rawValue, at: ["metadata", "type"])
+        document.body = "\n" + body.trimmingCharacters(in: .newlines) + "\n"
+        try write(document.serialized(), to: url)
+
+        try write(MemoryIndex.appending(title: title, fileName: fileName, hook: description, to: currentIndexText(of: project)), to: project.indexURL)
+        return url
+    }
+
+    /// Moves the memory to the Trash and drops its lines from `MEMORY.md`.
+    public func deleteMemory(_ memory: MemoryFile, in project: ClaudeProject) throws {
+        try trashItem(memory.url)
+        try removeIndexEntries(for: memory.fileName, in: project)
+    }
+
+    /// Moves the project's folder under `~/.claude/projects` (memories and session history) to the Trash.
+    /// Files in the project's real working directory, such as its CLAUDE.md, are not touched.
+    public func deleteProject(_ project: ClaudeProject) throws {
+        try trashItem(project.folderURL)
+    }
+
+    public func addToIndex(_ memory: MemoryFile, in project: ClaudeProject) throws {
+        let text = MemoryIndex.appending(
+            title: memory.displayName,
+            fileName: memory.fileName,
+            hook: memory.description ?? "",
+            to: currentIndexText(of: project))
+        try write(text, to: project.indexURL)
+    }
+
+    public func removeIndexEntries(for fileName: String, in project: ClaudeProject) throws {
+        let text = currentIndexText(of: project)
+        let updated = MemoryIndex.removingEntries(for: fileName, from: text)
+        if updated != text {
+            try write(updated, to: project.indexURL)
+        }
+    }
+
+    /// Re-reads the index from disk so writes never clobber a change made since the last load.
+    private func currentIndexText(of project: ClaudeProject) -> String {
+        (try? String(contentsOf: project.indexURL, encoding: .utf8)) ?? ""
+    }
+}
