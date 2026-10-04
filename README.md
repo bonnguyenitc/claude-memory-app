@@ -13,6 +13,22 @@ A native macOS app to browse and edit the memory files [Claude Code](https://cla
 - Live reload: a file watcher on `~/.claude` plus a **Reload** button (⌘R)
 - Safe saving: warns when a file changed on disk instead of overwriting it, and asks before quitting with unsaved changes
 
+## Screenshots
+
+Captured on sample data, not a real `~/.claude`.
+
+**Brain map** — memories as an Obsidian-style graph, linked by `[[wikilinks]]` and `MEMORY.md` entries
+
+![Brain map](docs/screenshots/brain-map.png)
+
+**Memory editor** — structured form, markdown editor with live preview, and `[[wikilinks]]`
+
+![Memory editor](docs/screenshots/memory-editor.png)
+
+**settings.json** — JSON editor with the Auto memory switch and memory folder picker
+
+![settings.json editor](docs/screenshots/settings-json.png)
+
 ## Requirements
 
 - macOS 14 or later
@@ -34,6 +50,14 @@ Other options:
 Scripts/compile_and_run.sh --test               # run the tests first
 Scripts/compile_and_run.sh --release-universal  # universal (arm64 + x86_64) release build
 swift test                                      # tests only
+```
+
+## Running on another folder
+
+The app reads `~/.claude` by default. Set `CLAUDE_HOME` to point it at a different folder, for example a copy with sample data:
+
+```sh
+CLAUDE_HOME=/path/to/sample-claude-home ClaudeMemory.app/Contents/MacOS/ClaudeMemory
 ```
 
 ## Project layout

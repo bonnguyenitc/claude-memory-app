@@ -20,11 +20,19 @@ public struct MemoryRepository {
     private let trashItem: (URL) throws -> Void
 
     public init(
-        claudeHome: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude", directoryHint: .isDirectory),
+        claudeHome: URL = defaultClaudeHome,
         trashItem: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     ) {
         self.claudeHome = claudeHome
         self.trashItem = trashItem
+    }
+
+    /// `~/.claude`, or the folder named by `CLAUDE_HOME` (used to run the app on sample data).
+    public static var defaultClaudeHome: URL {
+        if let override = ProcessInfo.processInfo.environment["CLAUDE_HOME"], !override.isEmpty {
+            return URL(filePath: (override as NSString).expandingTildeInPath, directoryHint: .isDirectory)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude", directoryHint: .isDirectory)
     }
 
     public var projectsDirectory: URL { claudeHome.appending(path: "projects", directoryHint: .isDirectory) }
