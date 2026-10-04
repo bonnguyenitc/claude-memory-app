@@ -72,16 +72,20 @@ struct ContentView: View {
 
     @ViewBuilder
     private var documentDetail: some View {
-        switch document {
-        case .memory(let url):
-            MemoryEditorView(url: url).id(url)
-        case .text(let url):
-            TextFileEditorView(url: url).id(url)
-        case .settings(let url):
-            SettingsEditorView(url: url).id(url)
-        case nil:
-            ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md, CLAUDE.md or settings.json"))
+        Group {
+            switch document {
+            case .memory(let url):
+                MemoryEditorView(url: url).id(url)
+            case .text(let url):
+                TextFileEditorView(url: url).id(url)
+            case .settings(let url):
+                SettingsEditorView(url: url).id(url)
+            case nil:
+                ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md, CLAUDE.md or settings.json"))
+            }
         }
+        .transition(.opacity)
+        .motion(.fade, value: document)
     }
 
     /// Leaves the map for the project the node belongs to, with its file selected.
@@ -208,6 +212,7 @@ struct FileRow: View {
             }
         }
         .padding(.vertical, Spacing.xxs)
+        .motion(.fade, value: model.isDirty(url))
     }
 }
 
@@ -217,5 +222,6 @@ struct UnsavedDot: View {
             .fill(Semantic.unsaved)
             .frame(width: Spacing.xs, height: Spacing.xs)
             .help("Unsaved")
+            .transition(.opacity)
     }
 }

@@ -35,3 +35,33 @@ extension MemoryType {
         }
     }
 }
+
+/// One animation vocabulary. Movement is dropped under Reduce Motion; opacity and color feedback stays.
+struct Motion {
+    let animation: Animation
+    let isMovement: Bool
+
+    /// Hover highlight on a row or button.
+    static let hover = Motion(animation: .easeOut(duration: 0.12), isMovement: false)
+    /// Chrome appearing or disappearing in place.
+    static let fade = Motion(animation: .easeOut(duration: 0.15), isMovement: false)
+    /// Rows entering, leaving or moving. Smooth is critically damped: it settles without overshoot.
+    static let layout = Motion(animation: .smooth(duration: 0.3), isMovement: true)
+}
+
+private struct MotionModifier<Value: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let motion: Motion
+    let value: Value
+
+    func body(content: Content) -> some View {
+        content.animation(reduceMotion && motion.isMovement ? nil : motion.animation, value: value)
+    }
+}
+
+extension View {
+    /// Animates changes caused by `value` with the app's shared motion, honoring Reduce Motion.
+    func motion<Value: Equatable>(_ motion: Motion, value: Value) -> some View {
+        modifier(MotionModifier(motion: motion, value: value))
+    }
+}

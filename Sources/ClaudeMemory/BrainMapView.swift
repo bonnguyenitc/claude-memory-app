@@ -128,6 +128,7 @@ private struct ConnectedRow: View {
             .padding(.horizontal, Spacing.xs)
             .padding(.vertical, Spacing.xxs + 1)
             .background(isHovering ? Color.primary.opacity(0.08) : .clear, in: .rect(cornerRadius: Radius.s))
+            .motion(.hover, value: isHovering)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

@@ -54,6 +54,7 @@ struct MemoryListView: View {
                 }
             }
         }
+        .motion(.layout, value: groups.flatMap { $0.1.map(\.url) })
         .onDeleteCommand {
             if case .memory(let url) = selection, let memory = groups.lazy.flatMap(\.1).first(where: { $0.url == url }) {
                 pendingDelete = memory
@@ -154,7 +155,7 @@ struct MemoryRow: View {
                 if model.isDirty(memory.url) {
                     UnsavedDot()
                 }
-            }
+            }            .motion(.fade, value: model.isDirty(memory.url))
             if let description = memory.description, !description.isEmpty {
                 Text(description)
                     .font(.callout)
