@@ -7,6 +7,8 @@ A native macOS app to browse and edit the memory files [Claude Code](https://cla
 - Browse memories across every project, or one project at a time
 - Edit memory files with a structured form (title, description, type, body)
 - Edit `MEMORY.md` index files and `CLAUDE.md` instructions (project and global) with a markdown editor and live preview
+- Edit `~/.claude/settings.json` with a syntax-highlighted JSON editor (validation and a **Format** button that keeps key order), an **Auto memory** switch (`autoMemoryEnabled`) and a memory folder field (`autoMemoryDirectory`); each changes only its own value and keeps the rest of the file as written
+- Warns when `MEMORY.md` is longer than the 200 lines / 25 KB Claude Code loads
 - Create, delete (to Trash) and add memories to the project index
 - Live reload: a file watcher on `~/.claude` plus a **Reload** button (⌘R)
 - Safe saving: warns when a file changed on disk instead of overwriting it, and asks before quitting with unsaved changes

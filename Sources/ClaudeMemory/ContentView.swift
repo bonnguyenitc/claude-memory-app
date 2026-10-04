@@ -11,6 +11,8 @@ enum DocumentRef: Hashable {
     case memory(URL)
     /// Any other markdown file: MEMORY.md, CLAUDE.md.
     case text(URL)
+    /// Claude Code's settings.json.
+    case settings(URL)
 }
 
 struct ContentView: View {
@@ -75,8 +77,10 @@ struct ContentView: View {
             MemoryEditorView(url: url).id(url)
         case .text(let url):
             TextFileEditorView(url: url).id(url)
+        case .settings(let url):
+            SettingsEditorView(url: url).id(url)
         case nil:
-            ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md or CLAUDE.md"))
+            ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md, CLAUDE.md or settings.json"))
         }
     }
 
@@ -113,7 +117,7 @@ struct SidebarView: View {
                     .tag(SidebarItem.allMemories)
                 Label("Brain map", systemImage: "point.3.connected.trianglepath.dotted")
                     .tag(SidebarItem.brainMap)
-                Label("Global CLAUDE.md", systemImage: "globe")
+                Label("Global", systemImage: "globe")
                     .tag(SidebarItem.global)
             }
             Section("Projects") {
@@ -170,9 +174,12 @@ struct GlobalFilesView: View {
 
     var body: some View {
         let url = model.repository.globalInstructionsURL
+        let settingsURL = model.repository.globalSettingsURL
         List(selection: $selection) {
             FileRow(url: url, title: "~/.claude/CLAUDE.md", subtitle: "Applies to every project")
                 .tag(DocumentRef.text(url))
+            FileRow(url: settingsURL, title: "~/.claude/settings.json", subtitle: "Memory, permissions, hooks and more")
+                .tag(DocumentRef.settings(settingsURL))
         }
         .navigationTitle("Global")
         .onAppear { selection = .text(url) }

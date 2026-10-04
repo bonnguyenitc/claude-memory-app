@@ -29,6 +29,7 @@ public struct MemoryRepository {
 
     public var projectsDirectory: URL { claudeHome.appending(path: "projects", directoryHint: .isDirectory) }
     public var globalInstructionsURL: URL { claudeHome.appending(path: "CLAUDE.md") }
+    public var globalSettingsURL: URL { claudeHome.appending(path: ClaudeSettings.fileName) }
 
     /// Instruction files Claude Code reads from a project directory.
     public static let projectInstructionPaths = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"]

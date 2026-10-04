@@ -14,6 +14,20 @@ public struct MemoryIndex: Hashable, Sendable {
         public let hook: String
     }
 
+    /// Claude Code loads only this many lines or bytes of the index into each session.
+    public static let loadedLineLimit = 200
+    public static let loadedByteLimit = 25_000
+
+    /// A message when `text` is longer than what Claude Code loads, nil otherwise.
+    public static func truncationWarning(for text: String) -> String? {
+        let lines = text.components(separatedBy: "\n").count - (text.hasSuffix("\n") ? 1 : 0)
+        let overLines = lines > loadedLineLimit
+        let overBytes = text.utf8.count > loadedByteLimit
+        guard overLines || overBytes else { return nil }
+        let reason = overLines ? "\(lines) lines (limit \(loadedLineLimit))" : "\(text.utf8.count / 1000) KB (limit \(loadedByteLimit / 1000) KB)"
+        return "MEMORY.md is \(reason). Claude Code ignores everything after the limit."
+    }
+
     public let text: String
     public let entries: [Entry]
 

@@ -43,9 +43,9 @@ final class AppModel {
         }
     }
 
-    /// `~/.claude` churns constantly (transcripts, todos); only memory and instruction files matter.
+    /// `~/.claude` churns constantly (transcripts, todos); only memory, instruction and settings files matter.
     private static func isRelevant(_ path: String) -> Bool {
-        path.contains("/memory/") || path.hasSuffix("/memory") || path.hasSuffix(".md")
+        path.contains("/memory/") || path.hasSuffix("/memory") || path.hasSuffix(".md") || path.hasSuffix("/\(ClaudeSettings.fileName)")
     }
 
     private func scheduleReload() {

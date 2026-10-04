@@ -137,13 +137,117 @@ struct TextFileEditorView: View {
     let url: URL
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            if url.lastPathComponent == MemoryIndex.fileName,
+               let warning = MemoryIndex.truncationWarning(for: model.buffers[url]?.text ?? "") {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(Semantic.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Spacing.m)
+                    .padding(.vertical, Spacing.xs)
+            }
             if model.buffers[url] != nil {
                 MarkdownField(text: Binding(get: { model.buffers[url]?.text ?? "" }, set: { model.updateText($0, for: url) }), fileURL: url)
             }
         }
         .editorChrome(url: url)
         .navigationTitle(url.lastPathComponent)
+    }
+}
+
+struct SettingsEditorView: View {
+    @Environment(AppModel.self) private var model
+    let url: URL
+
+    private var text: String { model.buffers[url]?.text ?? "" }
+    private var validationError: String? { ClaudeSettings.validationError(in: text) }
+    private var directory: String { ClaudeSettings.string(ClaudeSettings.autoMemoryDirectoryKey, in: text) ?? "" }
+    private var directoryError: String? { ClaudeSettings.memoryDirectoryError(directory) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.buffers[url] != nil {
+                memorySection
+                Divider()
+                if let validationError {
+                    Label(validationError, systemImage: "xmark.octagon.fill")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Spacing.m)
+                        .padding(.vertical, Spacing.xs)
+                }
+                JSONEditor(text: Binding(get: { text }, set: { model.updateText($0, for: url) }))
+            }
+        }
+        .editorChrome(url: url, canSave: validationError == nil && directoryError == nil)
+        .navigationTitle(url.lastPathComponent)
+        .toolbar {
+            ToolbarItem {
+                Button("Format", systemImage: "text.alignleft") {
+                    if let formatted = ClaudeSettings.formatted(text) {
+                        model.updateText(formatted, for: url)
+                    }
+                }
+                .help("Re-indent the JSON, keeping key order")
+                .disabled(ClaudeSettings.formatted(text).map { $0 == text } ?? true)
+            }
+        }
+    }
+
+    private var directoryBinding: Binding<String> {
+        Binding(
+            get: { directory },
+            set: { newValue in
+                if let updated = ClaudeSettings.setting(ClaudeSettings.autoMemoryDirectoryKey, toString: newValue, in: text) {
+                    model.updateText(updated, for: url)
+                }
+            })
+    }
+
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Choose the folder Claude Code stores auto memory in"
+        if directoryError == nil, !directory.isEmpty {
+            panel.directoryURL = URL(filePath: (directory as NSString).expandingTildeInPath, directoryHint: .isDirectory)
+        }
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        directoryBinding.wrappedValue = (chosen.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    private var memorySection: some View {
+        let isEnabled = ClaudeSettings.bool(ClaudeSettings.autoMemoryKey, in: text) ?? true
+        return VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Toggle("Auto memory", isOn: Binding(
+                get: { isEnabled },
+                set: { newValue in
+                    if let updated = ClaudeSettings.setting(ClaudeSettings.autoMemoryKey, to: newValue, in: text) {
+                        model.updateText(updated, for: url)
+                    }
+                }))
+                .disabled(validationError != nil)
+            Text("Lets Claude Code save and recall memories on its own (\(ClaudeSettings.autoMemoryKey)). Save to apply.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: Spacing.xs) {
+                TextField("Memory folder", text: directoryBinding,
+                          prompt: Text("~/.claude/projects/<project>/memory (default)"))
+                    .textFieldStyle(.roundedBorder)
+                Button("Choose…", action: chooseDirectory)
+            }
+            .disabled(validationError != nil)
+            .padding(.top, Spacing.xs)
+            Text(directoryError ?? "Where auto memory is stored (\(ClaudeSettings.autoMemoryDirectoryKey)). Leave empty for the default. Moving it does not move existing memories, and this app keeps reading ~/.claude/projects.")
+                .font(.caption)
+                .foregroundStyle(directoryError == nil ? Color.secondary : Color.red)
+        }
+        .padding(Spacing.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -175,6 +279,7 @@ private struct EditorChrome: ViewModifier {
     @Environment(AppModel.self) private var model
     let url: URL
     let onDelete: (() -> Void)?
+    let canSave: Bool
     @State private var showsConflict = false
 
     private var buffer: EditorBuffer? { model.buffers[url] }
@@ -211,7 +316,7 @@ private struct EditorChrome: ViewModifier {
             ToolbarItem {
                 Button("Save", systemImage: "square.and.arrow.down") { save(force: false) }
                     .keyboardShortcut("s")
-                    .disabled(buffer?.isDirty != true && exists)
+                    .disabled(!canSave || (buffer?.isDirty != true && exists))
             }
         }
         .alert("File changed outside the app", isPresented: $showsConflict) {
@@ -247,7 +352,7 @@ private struct EditorChrome: ViewModifier {
 }
 
 extension View {
-    func editorChrome(url: URL, onDelete: (() -> Void)? = nil) -> some View {
-        modifier(EditorChrome(url: url, onDelete: onDelete))
+    func editorChrome(url: URL, onDelete: (() -> Void)? = nil, canSave: Bool = true) -> some View {
+        modifier(EditorChrome(url: url, onDelete: onDelete, canSave: canSave))
     }
 }
