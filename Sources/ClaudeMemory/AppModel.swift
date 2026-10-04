@@ -9,6 +9,8 @@ struct EditorBuffer {
     var loadedModified: Date?
     /// The file changed on disk while this buffer had unsaved edits.
     var changedOnDisk = false
+    /// Why the last save failed; cleared by the next successful save or revert.
+    var saveError: String?
 
     var isDirty: Bool { text != original }
 }
@@ -18,6 +20,12 @@ enum SaveOutcome {
     /// The file changed on disk after it was loaded; saving would discard that change.
     case conflict
     case failed
+}
+
+struct OperationFailure: Equatable {
+    /// What couldn't be done, phrased for the banner headline.
+    let title: String
+    let detail: String
 }
 
 /// A transient "Moved to the Trash — Undo" message shown at the bottom of the window.
@@ -35,7 +43,8 @@ private final class UndoToken {}
 final class AppModel {
     private(set) var projects: [ClaudeProject] = []
     private(set) var buffers: [URL: EditorBuffer] = [:]
-    var errorMessage: String?
+    /// The last file operation that failed outside an editor, shown as a dismissible banner.
+    var failure: OperationFailure?
     private(set) var toast: UndoToast?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
 
@@ -123,9 +132,13 @@ final class AppModel {
             reload()
             return .saved
         } catch {
-            errorMessage = error.localizedDescription
+            buffers[url]?.saveError = error.localizedDescription
             return .failed
         }
+    }
+
+    func dismissFailure() {
+        failure = nil
     }
 
     func revert(_ url: URL) {
@@ -174,6 +187,7 @@ final class AppModel {
         guard let project = project(containing: memory.url) else { return }
         trash(
             actionName: "Delete Memory", message: "Moved “\(memory.displayName)” to the Trash",
+            failureVerb: "move", subject: memory.displayName,
             duration: .seconds(5), undoManager: undoManager,
             operation: {
                 let record = try repository.deleteMemory(memory, in: project)
@@ -191,6 +205,7 @@ final class AppModel {
     func deleteProject(_ project: ClaudeProject, undoManager: UndoManager?) {
         trash(
             actionName: "Delete Project", message: "Moved project “\(project.displayName)” to the Trash",
+            failureVerb: "move", subject: project.displayName,
             duration: .seconds(8), undoManager: undoManager,
             operation: {
                 let record = try repository.deleteProject(project)
@@ -215,6 +230,8 @@ final class AppModel {
     private func trash(
         actionName: String,
         message: String,
+        failureVerb: String,
+        subject: String,
         duration: Duration,
         undoManager: UndoManager?,
         operation: () throws -> TrashRecord,
@@ -224,7 +241,7 @@ final class AppModel {
         do {
             record = try operation()
         } catch {
-            errorMessage = error.localizedDescription
+            failure = OperationFailure(title: "Couldn’t \(failureVerb) “\(subject)”", detail: error.localizedDescription)
             reload()
             return
         }
@@ -256,7 +273,7 @@ final class AppModel {
     /// Puts the item back. Called from the undo stack, it registers the matching redo.
     private func restore(_ record: TrashRecord, actionName: String, undoManager: UndoManager?, again: @escaping @MainActor (AppModel) -> Void) {
         dismissToast()
-        perform { try repository.restore(record) }
+        perform("Couldn’t put “\(record.originalURL.lastPathComponent)” back") { try repository.restore(record) }
         if FileManager.default.fileExists(atPath: record.originalURL.path), record.originalURL.pathExtension == "md" {
             open(record.originalURL)
         }
@@ -273,19 +290,19 @@ final class AppModel {
     }
 
     func createInstructionFile(at url: URL) {
-        perform { try repository.write("", to: url) }
+        perform("Couldn’t create \(url.lastPathComponent)") { try repository.write("", to: url) }
     }
 
     func addToIndex(_ memory: MemoryFile) {
         guard let project = project(containing: memory.url) else { return }
-        perform { try repository.addToIndex(memory, in: project) }
+        perform("Couldn’t add “\(memory.displayName)” to MEMORY.md") { try repository.addToIndex(memory, in: project) }
     }
 
-    private func perform(_ operation: () throws -> Void) {
+    private func perform(_ failureTitle: String, _ operation: () throws -> Void) {
         do {
             try operation()
         } catch {
-            errorMessage = error.localizedDescription
+            failure = OperationFailure(title: failureTitle, detail: error.localizedDescription)
         }
         reload()
     }

@@ -71,11 +71,13 @@ struct ContentView: View {
             }
         }
         .motion(.layout, value: model.toast?.id)
-        .alert("Something went wrong", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(model.errorMessage ?? "")
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let failure = model.failure {
+                FailureBanner(failure: failure)
+                    .transition(.opacity)
+            }
         }
+        .motion(.fade, value: model.failure)
     }
 
     @ViewBuilder
@@ -250,5 +252,31 @@ struct UndoToastView: View {
         .background(.regularMaterial, in: .capsule)
         .overlay(Capsule().strokeBorder(.separator))
         .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+    }
+}
+
+/// A failed file operation, shown where the window's content begins; stays until dismissed.
+struct FailureBanner: View {
+    @Environment(AppModel.self) private var model
+    let failure: OperationFailure
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            Image(systemName: "xmark.octagon.fill")
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(failure.title).fontWeight(.medium)
+                Text(failure.detail)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: Spacing.m)
+            Button("Dismiss") { model.dismissFailure() }
+        }
+        .font(.callout)
+        .padding(.horizontal, Spacing.m)
+        .padding(.vertical, Spacing.xs)
+        .background(.red.opacity(0.08))
+        .accessibilityElement(children: .combine)
     }
 }

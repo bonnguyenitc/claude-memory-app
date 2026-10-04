@@ -286,7 +286,9 @@ private struct EditorChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         VStack(spacing: 0) {
-            if buffer?.changedOnDisk == true {
+            if let saveError = buffer?.saveError {
+                banner("Couldn’t save \(url.lastPathComponent) — \(saveError)", action: "Try again") { save(force: false) }
+            } else if buffer?.changedOnDisk == true {
                 banner("This file changed outside the app while you were editing.", action: "Discard my changes, load from disk") {
                     model.revert(url)
                 }

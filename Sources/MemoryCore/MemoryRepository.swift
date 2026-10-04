@@ -116,6 +116,18 @@ public struct MemoryRepository {
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// Why `slug` can't name a new memory in `project`, nil when it can.
+    public func slugProblem(_ slug: String, in project: ClaudeProject) -> MemoryError? {
+        guard slug.wholeMatch(of: /[a-z0-9]+(-[a-z0-9]+)*/) != nil else {
+            return .invalidSlug(slug)
+        }
+        let fileName = slug + ".md"
+        if FileManager.default.fileExists(atPath: project.memoryDirectory.appending(path: fileName).path) {
+            return .alreadyExists(fileName)
+        }
+        return nil
+    }
+
     @discardableResult
     public func createMemory(
         in project: ClaudeProject,
@@ -125,14 +137,11 @@ public struct MemoryRepository {
         type: MemoryType,
         body: String
     ) throws -> URL {
-        guard slug.wholeMatch(of: /[a-z0-9]+(-[a-z0-9]+)*/) != nil else {
-            throw MemoryError.invalidSlug(slug)
+        if let problem = slugProblem(slug, in: project) {
+            throw problem
         }
         let fileName = slug + ".md"
         let url = project.memoryDirectory.appending(path: fileName)
-        guard !FileManager.default.fileExists(atPath: url.path) else {
-            throw MemoryError.alreadyExists(fileName)
-        }
 
         var document = MarkdownDocument(parsing: "")
         document.setValue(slug, at: ["name"])

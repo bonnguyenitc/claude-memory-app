@@ -14,8 +14,20 @@ struct NewMemorySheet: View {
     @State private var memoryBody = ""
     @State private var error: String?
 
+    private var slugProblem: MemoryError? {
+        slug.isEmpty ? nil : model.repository.slugProblem(slug, in: project)
+    }
+
     private var canCreate: Bool {
-        !slug.isEmpty && !description.trimmingCharacters(in: .whitespaces).isEmpty
+        !slug.isEmpty && slugProblem == nil && !description.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// What is still missing before Create turns on, so a dimmed button is never a mystery.
+    private var missingHint: String? {
+        if slug.isEmpty { return "Enter a name to create the memory." }
+        if slugProblem != nil { return nil }
+        if description.trimmingCharacters(in: .whitespaces).isEmpty { return "Add a description so Claude knows when to read it." }
+        return nil
     }
 
     var body: some View {
@@ -25,6 +37,7 @@ struct NewMemorySheet: View {
 
             Form {
                 TextField("Name", text: $slug, prompt: Text("kebab-case-slug"))
+                    .onChange(of: slug) { error = nil }
                 TextField("Title", text: $title, prompt: Text(slug.isEmpty ? "Shown in MEMORY.md" : slug))
                 TextField("Description", text: $description, prompt: Text("One line Claude uses to decide when to read it"), axis: .vertical)
                     .lineLimit(1...3)
@@ -38,9 +51,14 @@ struct NewMemorySheet: View {
                 }
             }
 
-            if let error {
-                Text(error)
+            if let message = slugProblem?.errorDescription ?? error {
+                Label(message, systemImage: "exclamationmark.circle.fill")
                     .foregroundStyle(.red)
+                    .font(.callout)
+            } else if let missingHint {
+                Text(missingHint)
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
             }
 
             HStack {
