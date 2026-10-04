@@ -11,6 +11,10 @@
   const MIN_ZOOM = 0.1;
   const MAX_ZOOM = 8;
   const DIMMED = 0.1;
+  const FADE_TAU_MS = 58; // time constant of the highlight fade; matches 0.25 per frame at 60 Hz
+  const MAX_FRAME_MS = 100; // a stalled frame must not make the fade jump
+  const ZOOM_MS = 200;
+  const FIT_MS = 400;
   const STORAGE_KEY = 'brain.settings';
 
   // Muted enough to sit on both the light and the dark background.
@@ -99,9 +103,24 @@
     return !focus || id === focus || (neighbors.get(focus) || new Set()).has(id);
   }
 
-  // Eases a value toward its target, one frame at a time, so highlighting fades instead of snapping.
+  // Reduce Motion means no movement, so zooms jump; the highlight fade is opacity only and stays.
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const zoomDuration = (ms) => (reduceMotion.matches ? 0 : ms);
+
+  // Share of the remaining distance a fade covers this frame; set once per frame so every node agrees.
+  let fadeStep = 1;
+  let lastFrameTime = 0;
+
+  function startFrame() {
+    const now = performance.now();
+    const elapsed = lastFrameTime ? Math.min(now - lastFrameTime, MAX_FRAME_MS) : 0;
+    lastFrameTime = now;
+    fadeStep = 1 - Math.exp(-elapsed / FADE_TAU_MS);
+  }
+
+  // Eases a value toward its target over time, not per frame, so highlighting fades at the same speed on any display.
   function ease(current, target) {
-    const next = current + (target - current) * 0.25;
+    const next = current + (target - current) * fadeStep;
     if (Math.abs(target - next) < 0.01) return target;
     redraw();
     return next;
@@ -346,6 +365,7 @@
       .minZoom(MIN_ZOOM)
       .maxZoom(MAX_ZOOM)
       .nodeId('id')
+      .onRenderFramePre(startFrame)
       .nodeCanvasObject(drawNode)
       .nodePointerAreaPaint(paintPointerArea)
       .linkColor(linkColor)
@@ -373,10 +393,10 @@
     resize();
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
-    const zoomBy = (factor) => graph.zoom(clamp(graph.zoom() * factor, MIN_ZOOM, MAX_ZOOM), 200);
+    const zoomBy = (factor) => graph.zoom(clamp(graph.zoom() * factor, MIN_ZOOM, MAX_ZOOM), zoomDuration(ZOOM_MS));
     document.getElementById('zoom-in').addEventListener('click', () => zoomBy(1.4));
     document.getElementById('zoom-out').addEventListener('click', () => zoomBy(1 / 1.4));
-    document.getElementById('fit').addEventListener('click', () => graph.zoomToFit(400, 80));
+    document.getElementById('fit').addEventListener('click', () => graph.zoomToFit(zoomDuration(FIT_MS), 80));
 
     const gear = document.getElementById('gear');
     gear.addEventListener('click', () => {
