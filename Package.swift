@@ -16,7 +16,7 @@ let package = Package(
         .executableTarget(
             name: "ClaudeMemory",
             dependencies: ["MemoryCore"],
-            resources: [.copy("Preview")]),
+            resources: [.copy("Preview"), .copy("BrainMap")]),
         .testTarget(
             name: "MemoryCoreTests",
             dependencies: ["MemoryCore"]),

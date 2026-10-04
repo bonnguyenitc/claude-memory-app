@@ -2,7 +2,7 @@ import MemoryCore
 import SwiftUI
 
 enum SidebarItem: Hashable {
-    case allMemories, global
+    case allMemories, brainMap, global
     case project(String)
 }
 
@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var sidebar: SidebarItem? = .allMemories
     @State private var document: DocumentRef?
     @State private var creatingIn: ClaudeProject?
+    @State private var brainMap = BrainMapState()
+    /// A document to select once the sidebar change that reveals it has landed.
+    @State private var pendingDocument: DocumentRef?
 
     var body: some View {
         NavigationSplitView {
@@ -26,6 +29,8 @@ struct ContentView: View {
         } content: {
             Group {
                 switch sidebar {
+                case .brainMap:
+                    BrainMapPanel(state: brainMap, onOpen: open)
                 case .global:
                     GlobalFilesView(selection: $document)
                 case .project(let id):
@@ -36,17 +41,17 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 300, ideal: 340)
         } detail: {
-            switch document {
-            case .memory(let url):
-                MemoryEditorView(url: url).id(url)
-            case .text(let url):
-                TextFileEditorView(url: url).id(url)
-            case nil:
-                ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md or CLAUDE.md"))
+            if sidebar == .brainMap {
+                BrainMapView(state: brainMap, onOpen: open)
+            } else {
+                documentDetail
             }
         }
         .environment(\.openDocument, OpenDocumentAction { document = $0 })
-        .onChange(of: sidebar) { document = nil }
+        .onChange(of: sidebar) {
+            document = pendingDocument
+            pendingDocument = nil
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button("Reload", systemImage: "arrow.clockwise") { model.reload() }
@@ -60,6 +65,30 @@ struct ContentView: View {
             Button("OK") {}
         } message: {
             Text(model.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var documentDetail: some View {
+        switch document {
+        case .memory(let url):
+            MemoryEditorView(url: url).id(url)
+        case .text(let url):
+            TextFileEditorView(url: url).id(url)
+        case nil:
+            ContentUnavailableView("Select a file", systemImage: "doc.text", description: Text("A memory, MEMORY.md or CLAUDE.md"))
+        }
+    }
+
+    /// Leaves the map for the project the node belongs to, with its file selected.
+    private func open(_ node: BrainGraph.Node) {
+        let ref: DocumentRef = node.kind == .hub ? .text(node.url) : .memory(node.url)
+        let target = SidebarItem.project(node.projectID)
+        if sidebar == target {
+            document = ref
+        } else {
+            pendingDocument = ref
+            sidebar = target
         }
     }
 }
@@ -82,6 +111,8 @@ struct SidebarView: View {
                 Label("All memories", systemImage: "tray.full")
                     .badge(model.projects.reduce(0) { $0 + $1.memories.count })
                     .tag(SidebarItem.allMemories)
+                Label("Brain map", systemImage: "point.3.connected.trianglepath.dotted")
+                    .tag(SidebarItem.brainMap)
                 Label("Global CLAUDE.md", systemImage: "globe")
                     .tag(SidebarItem.global)
             }
