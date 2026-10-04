@@ -54,7 +54,7 @@ struct MemoryListView: View {
                 }
             }
         }
-        .motion(.layout, value: groups.flatMap { $0.1.map(\.url) })
+        .motion(.layout, value: scopedProjects.flatMap { $0.memories.map(\.url) })
         .onDeleteCommand {
             if case .memory(let url) = selection, let memory = groups.lazy.flatMap(\.1).first(where: { $0.url == url }) {
                 pendingDelete = memory
