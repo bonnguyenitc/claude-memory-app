@@ -9,9 +9,9 @@ struct MemoryEditorView: View {
     }
 
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let url: URL
     @State private var mode = Mode.form
-    @State private var confirmingDelete = false
 
     var body: some View {
         Group {
@@ -23,7 +23,7 @@ struct MemoryEditorView: View {
                 }
             }
         }
-        .editorChrome(url: url, onDelete: model.memory(at: url) == nil ? nil : { confirmingDelete = true })
+        .editorChrome(url: url, onDelete: canTrash ? { trash() } : nil)
         .navigationTitle(url.lastPathComponent)
         .toolbar {
             ToolbarItem {
@@ -34,14 +34,13 @@ struct MemoryEditorView: View {
                 .help("Form edits each field; Raw edits the whole file")
             }
         }
-        .confirmationDialog("Delete \(url.lastPathComponent)?", isPresented: $confirmingDelete) {
-            Button("Move to Trash", role: .destructive) {
-                if let memory = model.memory(at: url) {
-                    model.delete(memory)
-                }
-            }
-        } message: {
-            Text("The file is moved to the Trash and its line is removed from MEMORY.md.")
+    }
+
+    private var canTrash: Bool { model.memory(at: url) != nil }
+
+    private func trash() {
+        if let memory = model.memory(at: url) {
+            model.delete(memory, undoManager: undoManager)
         }
     }
 

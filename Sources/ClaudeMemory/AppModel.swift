@@ -20,12 +20,24 @@ enum SaveOutcome {
     case failed
 }
 
+/// A transient "Moved to the Trash — Undo" message shown at the bottom of the window.
+struct UndoToast: Identifiable {
+    let id = UUID()
+    let message: String
+    let undo: @MainActor () -> Void
+}
+
+/// Identifies one undo registration so the toast can withdraw exactly that entry.
+private final class UndoToken {}
+
 @MainActor
 @Observable
 final class AppModel {
     private(set) var projects: [ClaudeProject] = []
     private(set) var buffers: [URL: EditorBuffer] = [:]
     var errorMessage: String?
+    private(set) var toast: UndoToast?
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
 
     let repository = MemoryRepository()
     @ObservationIgnored private let resolver = ProjectPathResolver()
@@ -157,23 +169,107 @@ final class AppModel {
         return url
     }
 
-    func delete(_ memory: MemoryFile) {
+    /// Trashes the memory with no prompt; ⌘Z and the toast both put it back.
+    func delete(_ memory: MemoryFile, undoManager: UndoManager?) {
         guard let project = project(containing: memory.url) else { return }
-        perform {
-            try repository.deleteMemory(memory, in: project)
-            buffers[memory.url] = nil
+        trash(
+            actionName: "Delete Memory", message: "Moved “\(memory.displayName)” to the Trash",
+            duration: .seconds(5), undoManager: undoManager,
+            operation: {
+                let record = try repository.deleteMemory(memory, in: project)
+                buffers[memory.url] = nil
+                return record
+            },
+            again: { model in
+                if let memory = model.memory(at: memory.url) {
+                    model.delete(memory, undoManager: undoManager)
+                }
+            })
+    }
+
+    /// Trashes the project folder; the longer toast reflects that it carries session history.
+    func deleteProject(_ project: ClaudeProject, undoManager: UndoManager?) {
+        trash(
+            actionName: "Delete Project", message: "Moved project “\(project.displayName)” to the Trash",
+            duration: .seconds(8), undoManager: undoManager,
+            operation: {
+                let record = try repository.deleteProject(project)
+                let folder = project.folderURL.standardizedFileURL.path + "/"
+                for url in buffers.keys where url.standardizedFileURL.path.hasPrefix(folder) {
+                    buffers[url] = nil
+                }
+                return record
+            },
+            again: { model in
+                if let project = model.projects.first(where: { $0.folderURL == project.folderURL }) {
+                    model.deleteProject(project, undoManager: undoManager)
+                }
+            })
+    }
+
+    func dismissToast() {
+        toastTask?.cancel()
+        toast = nil
+    }
+
+    private func trash(
+        actionName: String,
+        message: String,
+        duration: Duration,
+        undoManager: UndoManager?,
+        operation: () throws -> TrashRecord,
+        again: @escaping @MainActor (AppModel) -> Void
+    ) {
+        let record: TrashRecord
+        do {
+            record = try operation()
+        } catch {
+            errorMessage = error.localizedDescription
+            reload()
+            return
+        }
+        reload()
+
+        let token = UndoToken()
+        undoManager?.registerUndo(withTarget: token) { [token, weak self] _ in
+            _ = token
+            MainActor.assumeIsolated {
+                self?.restore(record, actionName: actionName, undoManager: undoManager, again: again)
+            }
+        }
+        undoManager?.setActionName(actionName)
+
+        let toast = UndoToast(message: message) { [weak self] in
+            undoManager?.removeAllActions(withTarget: token)
+            self?.restore(record, actionName: actionName, undoManager: nil, again: again)
+        }
+        self.toast = toast
+        AccessibilityNotification.Announcement(message).post()
+        toastTask?.cancel()
+        toastTask = Task {
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled, self.toast?.id == toast.id else { return }
+            self.toast = nil
         }
     }
 
-    func deleteProject(_ project: ClaudeProject) {
-        perform {
-            try repository.deleteProject(project)
-            let folder = project.folderURL.standardizedFileURL.path + "/"
-            for url in buffers.keys where url.standardizedFileURL.path.hasPrefix(folder) {
-                buffers[url] = nil
-            }
+    /// Puts the item back. Called from the undo stack, it registers the matching redo.
+    private func restore(_ record: TrashRecord, actionName: String, undoManager: UndoManager?, again: @escaping @MainActor (AppModel) -> Void) {
+        dismissToast()
+        perform { try repository.restore(record) }
+        if FileManager.default.fileExists(atPath: record.originalURL.path), record.originalURL.pathExtension == "md" {
+            open(record.originalURL)
         }
-        reload()
+        if let undoManager {
+            let token = UndoToken()
+            undoManager.registerUndo(withTarget: token) { [token, weak self] _ in
+                _ = token
+                MainActor.assumeIsolated {
+                    if let self { again(self) }
+                }
+            }
+            undoManager.setActionName(actionName)
+        }
     }
 
     func createInstructionFile(at url: URL) {

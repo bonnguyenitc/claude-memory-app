@@ -8,13 +8,13 @@ struct MemoryListView: View {
     }
 
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let scope: Scope
     @Binding var selection: DocumentRef?
     let onCreate: (ClaudeProject) -> Void
 
     @State private var search = ""
     @State private var typeFilter: MemoryType?
-    @State private var pendingDelete: MemoryFile?
 
     private var scopedProjects: [ClaudeProject] {
         switch scope {
@@ -45,10 +45,10 @@ struct MemoryListView: View {
                         MemoryRow(memory: memory)
                             .tag(DocumentRef.memory(memory.url))
                             .contextMenu {
-                                Button("Move to Trash", systemImage: "trash", role: .destructive) { pendingDelete = memory }
+                                Button("Move to Trash", systemImage: "trash", role: .destructive) { trash(memory) }
                             }
                             .swipeActions {
-                                Button("Move to Trash", systemImage: "trash", role: .destructive) { pendingDelete = memory }
+                                Button("Move to Trash", systemImage: "trash", role: .destructive) { trash(memory) }
                             }
                     }
                 }
@@ -57,22 +57,8 @@ struct MemoryListView: View {
         .motion(.layout, value: scopedProjects.flatMap { $0.memories.map(\.url) })
         .onDeleteCommand {
             if case .memory(let url) = selection, let memory = groups.lazy.flatMap(\.1).first(where: { $0.url == url }) {
-                pendingDelete = memory
+                trash(memory)
             }
-        }
-        .confirmationDialog(
-            "Delete \(pendingDelete?.fileName ?? "")?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            presenting: pendingDelete
-        ) { memory in
-            Button("Move to Trash", role: .destructive) {
-                if selection == .memory(memory.url) {
-                    selection = nil
-                }
-                model.delete(memory)
-            }
-        } message: { _ in
-            Text("The file is moved to the Trash and its line is removed from MEMORY.md.")
         }
         .overlay {
             if groups.isEmpty {
@@ -103,6 +89,13 @@ struct MemoryListView: View {
                 }
             }
         }
+    }
+
+    private func trash(_ memory: MemoryFile) {
+        if selection == .memory(memory.url) {
+            selection = nil
+        }
+        model.delete(memory, undoManager: undoManager)
     }
 
     private var navigationTitle: String {

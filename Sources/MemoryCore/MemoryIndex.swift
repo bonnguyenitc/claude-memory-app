@@ -57,6 +57,20 @@ public struct MemoryIndex: Hashable, Sendable {
         return text + (text.hasSuffix("\n") ? "" : "\n") + line + "\n"
     }
 
+    /// The raw lines of `text` that list `fileName`.
+    public static func lines(for fileName: String, in text: String) -> [String] {
+        let lines = text.components(separatedBy: "\n")
+        return MemoryIndex(text: text).entries.filter { $0.target == fileName }.map { lines[$0.line] }
+    }
+
+    public static func appending(lines: [String], to text: String) -> String {
+        let block = lines.joined(separator: "\n") + "\n"
+        if text.isEmpty {
+            return "# Memory Index\n\n" + block
+        }
+        return text + (text.hasSuffix("\n") ? "" : "\n") + block
+    }
+
     public static func removingEntries(for fileName: String, from text: String) -> String {
         let index = MemoryIndex(text: text)
         let doomed = Set(index.entries.filter { $0.target == fileName }.map(\.line))

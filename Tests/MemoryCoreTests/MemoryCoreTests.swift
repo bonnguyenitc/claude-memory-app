@@ -150,7 +150,13 @@ Body with [[other-memory]] and [[missing|alias]].
 @Suite struct RepositoryTests {
     @Test func createsIndexesAndDeletesMemories() throws {
         let root = try TemporaryDirectory()
-        let repository = MemoryRepository(claudeHome: root.url) { try FileManager.default.removeItem(at: $0) }
+        let trash = root.url.appending(path: "Trash", directoryHint: .isDirectory)
+        let repository = MemoryRepository(claudeHome: root.url) { url in
+            try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+            let destination = trash.appending(path: url.lastPathComponent)
+            try FileManager.default.moveItem(at: url, to: destination)
+            return destination
+        }
         let folder = repository.projectsDirectory.appending(path: "-p")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var project = try #require(repository.loadProjects(resolver: ProjectPathResolver()).first)
@@ -173,10 +179,37 @@ Body with [[other-memory]] and [[missing|alias]].
 
         let stray = try #require(project.memories.first { $0.fileName == "stray.md" })
         try repository.addToIndex(stray, in: project)
-        try repository.deleteMemory(created, in: project)
+        let record = try repository.deleteMemory(created, in: project)
         project = try #require(repository.loadProjects(resolver: ProjectPathResolver()).first)
         #expect(project.memories.map(\.fileName) == ["stray.md"])
         #expect(project.index?.entries.map(\.target) == ["stray.md"])
+
+        try repository.restore(record)
+        project = try #require(repository.loadProjects(resolver: ProjectPathResolver()).first)
+        #expect(project.memories.map(\.fileName).sorted() == ["first.md", "stray.md"])
+        #expect(project.index?.contains(fileName: "first.md") == true)
+        #expect(project.index?.contains(fileName: "stray.md") == true)
+        #expect(throws: MemoryError.alreadyExists("first.md")) { try repository.restore(record) }
+    }
+
+    @Test func restoresATrashedProject() throws {
+        let root = try TemporaryDirectory()
+        let trash = root.url.appending(path: "Trash", directoryHint: .isDirectory)
+        let repository = MemoryRepository(claudeHome: root.url) { url in
+            try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+            let destination = trash.appending(path: url.lastPathComponent)
+            try FileManager.default.moveItem(at: url, to: destination)
+            return destination
+        }
+        let folder = repository.projectsDirectory.appending(path: "-p")
+        try FileManager.default.createDirectory(at: folder.appending(path: "memory"), withIntermediateDirectories: true)
+        try "x".write(to: folder.appending(path: "memory/a.md"), atomically: true, encoding: .utf8)
+        let project = try #require(repository.loadProjects(resolver: ProjectPathResolver()).first)
+
+        let record = try repository.deleteProject(project)
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        try repository.restore(record)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "memory/a.md").path))
     }
 }
 

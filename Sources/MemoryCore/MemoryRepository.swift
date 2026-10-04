@@ -3,6 +3,7 @@ import Foundation
 public enum MemoryError: LocalizedError, Equatable {
     case invalidSlug(String)
     case alreadyExists(String)
+    case notRestorable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -10,18 +11,35 @@ public enum MemoryError: LocalizedError, Equatable {
             "“\(slug)” is not kebab-case (only a–z, 0–9 and hyphens)."
         case .alreadyExists(let fileName):
             "\(fileName) already exists in this memory folder."
+        case .notRestorable(let name):
+            "\(name) can't be put back automatically. Restore it from the Trash in Finder."
         }
     }
+}
+
+/// What a delete moved to the Trash, enough to put it back exactly where it was.
+public struct TrashRecord: Sendable {
+    public let originalURL: URL
+    /// Where the item sits in the Trash; nil when the trash implementation can't say.
+    public let trashedURL: URL?
+    /// The `MEMORY.md` lines that were removed with the memory, verbatim.
+    let indexLines: [String]
+    let indexURL: URL?
 }
 
 /// File-system access to Claude Code's memory and instruction files.
 public struct MemoryRepository {
     public let claudeHome: URL
-    private let trashItem: (URL) throws -> Void
+    /// Moves an item to the Trash and returns where it landed.
+    private let trashItem: (URL) throws -> URL?
 
     public init(
         claudeHome: URL = defaultClaudeHome,
-        trashItem: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+        trashItem: @escaping (URL) throws -> URL? = {
+            var result: NSURL?
+            try FileManager.default.trashItem(at: $0, resultingItemURL: &result)
+            return result as URL?
+        }
     ) {
         self.claudeHome = claudeHome
         self.trashItem = trashItem
@@ -128,15 +146,33 @@ public struct MemoryRepository {
     }
 
     /// Moves the memory to the Trash and drops its lines from `MEMORY.md`.
-    public func deleteMemory(_ memory: MemoryFile, in project: ClaudeProject) throws {
-        try trashItem(memory.url)
+    @discardableResult
+    public func deleteMemory(_ memory: MemoryFile, in project: ClaudeProject) throws -> TrashRecord {
+        let lines = MemoryIndex.lines(for: memory.fileName, in: currentIndexText(of: project))
+        let trashed = try trashItem(memory.url)
         try removeIndexEntries(for: memory.fileName, in: project)
+        return TrashRecord(originalURL: memory.url, trashedURL: trashed, indexLines: lines, indexURL: project.indexURL)
     }
 
     /// Moves the project's folder under `~/.claude/projects` (memories and session history) to the Trash.
     /// Files in the project's real working directory, such as its CLAUDE.md, are not touched.
-    public func deleteProject(_ project: ClaudeProject) throws {
-        try trashItem(project.folderURL)
+    @discardableResult
+    public func deleteProject(_ project: ClaudeProject) throws -> TrashRecord {
+        let trashed = try trashItem(project.folderURL)
+        return TrashRecord(originalURL: project.folderURL, trashedURL: trashed, indexLines: [], indexURL: nil)
+    }
+
+    /// Puts a trashed item back and re-adds the `MEMORY.md` lines it took with it.
+    public func restore(_ record: TrashRecord) throws {
+        let name = record.originalURL.lastPathComponent
+        guard let trashed = record.trashedURL else { throw MemoryError.notRestorable(name) }
+        guard !FileManager.default.fileExists(atPath: record.originalURL.path) else { throw MemoryError.alreadyExists(name) }
+        try FileManager.default.createDirectory(at: record.originalURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: trashed, to: record.originalURL)
+        if let indexURL = record.indexURL, !record.indexLines.isEmpty {
+            let text = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
+            try write(MemoryIndex.appending(lines: record.indexLines, to: text), to: indexURL)
+        }
     }
 
     public func addToIndex(_ memory: MemoryFile, in project: ClaudeProject) throws {

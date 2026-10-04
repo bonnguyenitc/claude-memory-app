@@ -63,6 +63,14 @@ struct ContentView: View {
         .sheet(item: $creatingIn) { project in
             NewMemorySheet(project: project) { document = .memory($0) }
         }
+        .overlay(alignment: .bottom) {
+            if let toast = model.toast {
+                UndoToastView(toast: toast)
+                    .padding(Spacing.l)
+                    .transition(.opacity.combined(with: .offset(y: Spacing.s)))
+            }
+        }
+        .motion(.layout, value: model.toast?.id)
         .alert("Something went wrong", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") {}
         } message: {
@@ -103,9 +111,9 @@ struct ContentView: View {
 
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     @Binding var selection: SidebarItem?
     @AppStorage("showsEmptyProjects") private var showsEmptyProjects = false
-    @State private var pendingDelete: ClaudeProject?
 
     private var visibleProjects: [ClaudeProject] {
         showsEmptyProjects
@@ -138,29 +146,15 @@ struct SidebarView: View {
                     .help(project.displayPath)
                     .tag(SidebarItem.project(project.id))
                     .contextMenu {
-                        Button("Move to Trash", systemImage: "trash", role: .destructive) { pendingDelete = project }
+                        Button("Move to Trash", systemImage: "trash", role: .destructive) { trash(project) }
                     }
                 }
             }
         }
         .onDeleteCommand {
             if case .project(let id) = selection, let project = model.project(id: id) {
-                pendingDelete = project
+                trash(project)
             }
-        }
-        .confirmationDialog(
-            "Delete project \(pendingDelete?.displayName ?? "")?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            presenting: pendingDelete
-        ) { project in
-            Button("Move to Trash", role: .destructive) {
-                if selection == .project(project.id) {
-                    selection = .allMemories
-                }
-                model.deleteProject(project)
-            }
-        } message: { project in
-            Text("The folder \(project.id) in ~/.claude/projects, with its \(project.memories.count) memories and session history, is moved to the Trash. Files in the real working directory (such as CLAUDE.md) are not touched.")
         }
         .safeAreaInset(edge: .bottom) {
             Toggle("Show projects without memories", isOn: $showsEmptyProjects)
@@ -169,6 +163,15 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.s)
         }
+    }
+}
+
+extension SidebarView {
+    private func trash(_ project: ClaudeProject) {
+        if selection == .project(project.id) {
+            selection = .allMemories
+        }
+        model.deleteProject(project, undoManager: undoManager)
     }
 }
 
@@ -223,5 +226,29 @@ struct UnsavedDot: View {
             .frame(width: Spacing.xs, height: Spacing.xs)
             .help("Unsaved")
             .transition(.opacity)
+    }
+}
+
+/// Bottom-of-window confirmation of a trash action, with the one-click way back.
+struct UndoToastView: View {
+    @Environment(AppModel.self) private var model
+    let toast: UndoToast
+
+    var body: some View {
+        HStack(spacing: Spacing.m) {
+            Text(toast.message)
+                .lineLimit(1)
+            Button("Undo", action: toast.undo)
+                .buttonStyle(.link)
+            Button("Dismiss", systemImage: "xmark") { model.dismissToast() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, Spacing.m)
+        .padding(.vertical, Spacing.xs + 2)
+        .background(.regularMaterial, in: .capsule)
+        .overlay(Capsule().strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
     }
 }
